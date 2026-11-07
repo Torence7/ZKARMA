@@ -4,9 +4,26 @@ An age-restricted shop with two age checks. Both are "operations" and go
 through the same redeem checks.
   1. Entering the site. One proof gets the agent a 30-minute session.
   2. Each purchase. Every order needs its own proof, tied to that exact order.
+
+Proofs are checked with Longfellow (proofs.py).
+
 Run:
-    pip install flask cbor2
+    pip install -r website/requirements.txt
     ZKARMA_DEV=1 python website/app.py
+
+Test:
+    python website/tests/test_flow.py          # dev mode, needs only Flask
+    python website/tests/test_real_proofs.py   # real proofs, needs the setup below
+
+One-time setup for real proofs (the fake "dev-proof" works without it):
+    cargo build --release --manifest-path zk/Cargo.toml
+    zk/target/release/zkage circuits --out zk/circuits-1attr.bin
+    # and put the test DMV's public key at trust/issuer_pub.json
+
+Try it. Dev mode fakes the agent's signature with a header and accepts the
+fake proof "dev-proof".
+    A='X-Dev-Agent-Thumbprint: test-agent'
+    J='Content-Type: application/json'
 
     # 1. Ask to enter -> 401 with a challenge
     curl -s -X POST localhost:5050/enter -H "$A"
@@ -41,26 +58,41 @@ import uuid
 import cbor2
 from flask import Flask, g, jsonify, request
 
+import proofs  # Longfellow verifier (website/proofs.py)
+
+# ----------------------------------------------------------------------------
+# Config and state
+# ----------------------------------------------------------------------------
 ORIGIN = os.environ.get("ZKARMA_ORIGIN", "http://localhost:5050")
 PORT = int(os.environ.get("ZKARMA_PORT", "5050"))
 CLAIM = "age_over_18"
 NONCE_TTL_S = 120        # how long a challenge stays valid
 SESSION_TTL_S = 30 * 60  # how long one entry proof lets the agent browse
 MAX_QUANTITY = 10
-# Dev mode turns on the stubs below (fake signatures and fake proofs).
+# Dev mode fakes the agent signature with a header and also accepts the fake
+# proof "dev-proof".
 DEV = os.environ.get("ZKARMA_DEV") == "1"
+
+# Everything here needs an age check. Prices are integer cents so the
+# canonical JSON never contains floats.
 CATALOG = {
     "wine-001": {"name": "Red wine, 750 ml", "price_cents": 1999},
     "vape-001": {"name": "Vape starter kit", "price_cents": 2499},
 }
 
 app = Flask(__name__)
+# All in memory for now, so a restart forgets everything.
 OPERATIONS: dict[str, dict] = {}  # op_id -> {"operation": {...}, "agent_jkt": str, "status": str}
-NONCES: dict[str, dict] = {}      # nonce (hex) -> {"op_id": str, "expires_at": float}
+NONCES: dict[str, dict] = {}      # nonce (hex) -> {"op_id": str, "now": str, "expires_at": float}
 SESSIONS: dict[str, dict] = {}    # token -> {"agent_jkt": str, "expires_at": float}
 CONSUMED: set[str] = set()        # op_ids that already ran
 _lock = threading.Lock()
 
+
+# ----------------------------------------------------------------------------
+# Shared spec. The wallet must build exactly the same bytes.
+# TODO: move into spec/ once the group agrees on the formats.
+# ----------------------------------------------------------------------------
 def operation_hash(operation: dict) -> bytes:
     """SHA-256 of the operation as canonical JSON (sorted keys, no spaces).
     Stand-in for RFC 8785, which gives the same bytes for what an operation
@@ -76,24 +108,18 @@ def build_transcript(origin: str, nonce: bytes, agent_jkt: str, op_hash: bytes) 
     return cbor2.dumps([None, None, ["ZKARMAv1", inner]])
 
 
+# ----------------------------------------------------------------------------
+# Stubs. 
+# ----------------------------------------------------------------------------
 def verify_agent_signature(req) -> str | None:
-    """The thumbprint of the agent key that signed this request (Web Bot Auth),
-    or None. TODO: port verify_request() from the prototype's demo/httpsig.py."""
     if DEV:
         return req.headers.get("X-Dev-Agent-Thumbprint") or None
     return None
 
 
-def verify_proof(proof: str, transcript: bytes) -> bool:
-    """TODO: call Longfellow's verify (the prototype's zkage tool) with the
-    DMV's public key, this transcript, the claim and the current time."""
-    return DEV and proof == "dev-proof"
-
-
 def consume(op_id: str) -> bool:
-    """Mark an operation as used. True only the first time.
-    TODO: replace with ledger.consume()."""
-    with _lock: 
+
+    with _lock:  # check and add as one step
         if op_id in CONSUMED:
             return False
         CONSUMED.add(op_id)
@@ -101,24 +127,27 @@ def consume(op_id: str) -> bool:
 
 
 def issue_session(agent_jkt: str, ttl_s: int) -> str:
-    """A session token tied to the agent's key, so a stolen token is useless
-    without that key. TODO: replace withtokens.py."""
+    """A session token tied to the agent's key, so a stolen token is useless"""
     token = secrets.token_urlsafe(32)
     SESSIONS[token] = {"agent_jkt": agent_jkt, "expires_at": time.time() + ttl_s}
     return token
 
 
 def session_agent(req) -> str | None:
-    """The agent a live session token was issued to, or None.
-    TODO: replace with tokens.py."""
+    """The agent a live session token was issued to, or None."""
     scheme, _, token = req.headers.get("Authorization", "").partition(" ")
     session = SESSIONS.get(token) if scheme == "ZKARMA" else None
     if session is None or session["expires_at"] < time.time():
         return None
     return session["agent_jkt"]
 
+
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
 def reject(reason: str, status: int = 403):
     return jsonify(error=reason), status
+
 
 def new_operation(action: str, **details) -> dict:
     """Create an operation for the agent making this request."""
@@ -131,16 +160,21 @@ def new_operation(action: str, **details) -> dict:
     OPERATIONS[op_id] = record
     return record
 
+
 def challenge(record: dict):
     """A 401 with a fresh nonce for this operation."""
     operation = record["operation"]
     nonce = secrets.token_bytes(32).hex()
-    NONCES[nonce] = {"op_id": operation["op_id"], "expires_at": time.time() + NONCE_TTL_S}
+    # The proof must show the ID is valid at this exact time, so the wallet
+    # proves for it and the site verifies with it.
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    NONCES[nonce] = {"op_id": operation["op_id"], "now": now, "expires_at": time.time() + NONCE_TTL_S}
     body = jsonify(error="age_check_required", challenge={
         "op_id": operation["op_id"],
         "operation": operation,
         "operation_hash": operation_hash(operation).hex(),
         "nonce": nonce,
+        "now": now,
         "origin": ORIGIN,
         "claim": CLAIM,
         "expires_in": NONCE_TTL_S,
@@ -230,8 +264,10 @@ def redeem():
     transcript = build_transcript(ORIGIN, bytes.fromhex(body["nonce"]), agent_jkt,
                                   operation_hash(operation))
 
-    # 5. Check the zero-knowledge proof against the rebuilt transcript.
-    if not verify_proof(body["proof"], transcript):
+    # 5. Check the zero-knowledge proof against the rebuilt transcript and the
+    #    challenge's time, with Longfellow. Dev mode also accepts "dev-proof".
+    dev_pass = DEV and body["proof"] == "dev-proof"
+    if not dev_pass and not proofs.verify(body["proof"], transcript, entry["now"]):
         return reject("proof_invalid")
 
     # 6. Consume the operation itself, so a fresh proof for it is still refused.
