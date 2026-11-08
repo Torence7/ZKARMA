@@ -11,16 +11,12 @@ Run:
     pip install -r website/requirements.txt
     ZKARMA_DEV=1 python website/app.py
 
-Test:
-    python website/tests/test_flow.py          # dev mode, needs only Flask
-    python website/tests/test_real_proofs.py   # real proofs, needs the setup below
-
 One-time setup for real proofs (the fake "dev-proof" works without it):
     cargo build --release --manifest-path zk/Cargo.toml
     zk/target/release/zkage circuits --out zk/circuits-1attr.bin
     # and put the test DMV's public key at trust/issuer_pub.json
 
-Try it. Dev mode fakes the agent's signature with a header and accepts the
+Dev mode fakes the agent's signature with a header and accepts the
 fake proof "dev-proof".
     A='X-Dev-Agent-Thumbprint: test-agent'
     J='Content-Type: application/json'
