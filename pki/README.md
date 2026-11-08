@@ -103,7 +103,7 @@ tests/test_pki.py
 Everything is importable from `zkarma_pki`. Each party loads its own
 `TrustStore.from_bundle("<trust_bundle>")` at startup.
 
-**T (website).**
+**Website**
 
 ```python
 from zkarma_pki import *
@@ -124,7 +124,7 @@ issuer = trust.verify(issuer_cert_pem, Role.ISSUER)   # issuer.public_key
 See `MockWebsite` for the full check order, the action ledger and the lock
 that makes concurrent replay safe.
 
-**P (client/wallet).**
+**Client**
 
 ```python
 ring = ClientKeyring("wallet_keys/")
@@ -135,7 +135,7 @@ auth_env = sign(ring.key_for(site.name), PURPOSE_AUTHORIZATION, auth)
 bind = canonical_hash(auth)                          # feed into the Longfellow proof's nonce
 ```
 
-**V (agent).**
+**Agent**
 
 ```python
 env = sign(agent_key, PURPOSE_AGENT_REQUEST, {"site": ..., "operation": ...}, cert=agent_cert)
