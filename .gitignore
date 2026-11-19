@@ -1,3 +1,10 @@
 *.pdf
-__pycache__/
 *.tex
+.venv/
+pki_out/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.egg-info/
+zk/target/
+zk/*.bin
