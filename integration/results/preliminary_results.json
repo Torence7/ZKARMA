@@ -1,0 +1,709 @@
+{
+  "meta": {
+    "date": "2026-11-19 18:47:12 UTC",
+    "platform": "Linux-6.18.44-fc-v653-x86_64-with-glibc2.39",
+    "python": "3.13.18"
+  },
+  "scenarios": [
+    {
+      "id": "H1",
+      "title": "Safe agent buys an age-restricted item (wine)",
+      "kind": "honest",
+      "mode": "pki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H1",
+      "title": "Safe agent buys an age-restricted item (wine)",
+      "kind": "honest",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H1",
+      "title": "Safe agent buys an age-restricted item (wine)",
+      "kind": "honest",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H2",
+      "title": "Safe agent buys an unrestricted item (no proof needed)",
+      "kind": "honest",
+      "mode": "pki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H2",
+      "title": "Safe agent buys an unrestricted item (no proof needed)",
+      "kind": "honest",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H2",
+      "title": "Safe agent buys an unrestricted item (no proof needed)",
+      "kind": "honest",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H3",
+      "title": "A second, separately certified agent buys for the same user",
+      "kind": "honest",
+      "mode": "pki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H3",
+      "title": "A second, separately certified agent buys for the same user",
+      "kind": "honest",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H3",
+      "title": "A second, separately certified agent buys for the same user",
+      "kind": "honest",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H4",
+      "title": "Revoking agent-1 does not affect agent-2",
+      "kind": "honest",
+      "mode": "pki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H5",
+      "title": "Main-branch website: enter (session) -> browse -> checkout",
+      "kind": "honest",
+      "mode": "pki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H5",
+      "title": "Main-branch website: enter (session) -> browse -> checkout",
+      "kind": "honest",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "H5",
+      "title": "Main-branch website: enter (session) -> browse -> checkout",
+      "kind": "honest",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "placed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A1",
+      "title": "Request with no signature, only the dev identity header",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (missing_signature)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A1",
+      "title": "Request with no signature, only the dev identity header",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": false,
+      "note": "website accepted the claimed identity",
+      "correct": false
+    },
+    {
+      "id": "A1",
+      "title": "Request with no signature, only the dev identity header",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": false,
+      "note": "website accepted the claimed identity",
+      "correct": false
+    },
+    {
+      "id": "A2",
+      "title": "Unpaired agent claims to be the user's paired agent at the wallet",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "agent_not_paired",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A2",
+      "title": "Unpaired agent claims to be the user's paired agent at the wallet",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": true,
+      "note": "wallet produced a proof for the impostor",
+      "correct": false
+    },
+    {
+      "id": "A2",
+      "title": "Unpaired agent claims to be the user's paired agent at the wallet",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": true,
+      "note": "wallet produced a proof for the impostor",
+      "correct": false
+    },
+    {
+      "id": "A3",
+      "title": "Agent certificate forged by an attacker-run CA",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (bad_chain)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A4",
+      "title": "Stolen agent certificate presented without its private key",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (bad_key)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A5",
+      "title": "Agent revoked after compromise keeps sending requests",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (revoked)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A6",
+      "title": "Agent certificate past its expiry",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (expired)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A7",
+      "title": "Website certificate used as an agent certificate (role confusion)",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (wrong_role)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A8",
+      "title": "Exact replay of a captured signed request",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (replay)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A8",
+      "title": "Exact replay of a captured signed request",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": false,
+      "note": "replayed request created a second operation",
+      "correct": false
+    },
+    {
+      "id": "A8",
+      "title": "Exact replay of a captured signed request",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": false,
+      "note": "replayed request created a second operation",
+      "correct": false
+    },
+    {
+      "id": "A9",
+      "title": "Request body changed in transit (quantity 1 -> 10)",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (body_mismatch)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A9",
+      "title": "Request body changed in transit (quantity 1 -> 10)",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": false,
+      "note": "website accepted the altered body",
+      "correct": false
+    },
+    {
+      "id": "A9",
+      "title": "Request body changed in transit (quantity 1 -> 10)",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": false,
+      "note": "website accepted the altered body",
+      "correct": false
+    },
+    {
+      "id": "A10",
+      "title": "Request signed for the wallet replayed to the website",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (wrong_target)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A11",
+      "title": "Website's agent CRL is stale (no fresh revocation info)",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "bad_signature (stale_crl)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A12",
+      "title": "Agent rewrites the challenge's amount (and recomputes its hash)",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "website_sig_bad_signature",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A12",
+      "title": "Agent rewrites the challenge's amount (and recomputes its hash)",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "user_prompted_with_unauthenticated_challenge",
+      "user_prompted": true,
+      "note": "user was shown amount_cents=1; website then answered 403 proof_invalid",
+      "correct": false
+    },
+    {
+      "id": "A12",
+      "title": "Agent rewrites the challenge's amount (and recomputes its hash)",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "user_prompted_with_unauthenticated_challenge",
+      "user_prompted": true,
+      "note": "user was shown amount_cents=1; website then answered 200 placed",
+      "correct": false
+    },
+    {
+      "id": "A13",
+      "title": "Agent forges a challenge and signs it with its own agent certificate",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "website_sig_wrong_role",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A14",
+      "title": "Challenge signed by a different certified website, relabelled as the user's site",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "website_sig_name_mismatch",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A15",
+      "title": "Agent strips the website's signature from the challenge (downgrade)",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "unsigned",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A16",
+      "title": "Another agent redeems a proof the user approved for agent-1",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "wrong_agent",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A16",
+      "title": "Another agent redeems a proof the user approved for agent-1",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": true,
+      "note": "thief's order was placed",
+      "correct": false
+    },
+    {
+      "id": "A16",
+      "title": "Another agent redeems a proof the user approved for agent-1",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": true,
+      "note": "thief's order was placed",
+      "correct": false
+    },
+    {
+      "id": "A17",
+      "title": "Same proof redeemed twice",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "nonce_invalid_or_used",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A17",
+      "title": "Same proof redeemed twice",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "nonce_invalid_or_used",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A17",
+      "title": "Same proof redeemed twice",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "nonce_invalid_or_used",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A18",
+      "title": "Proof for one order redeemed against a bigger order",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "proof_invalid",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A18",
+      "title": "Proof for one order redeemed against a bigger order",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "proof_invalid",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A18",
+      "title": "Proof for one order redeemed against a bigger order",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": true,
+      "stopped_at": "-",
+      "reason": "ok",
+      "user_prompted": true,
+      "note": "bigger order placed with the small order's proof",
+      "correct": false
+    },
+    {
+      "id": "A19",
+      "title": "Re-run an order that already ran (fresh challenge for the same op_id)",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "status_required",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A19",
+      "title": "Re-run an order that already ran (fresh challenge for the same op_id)",
+      "kind": "attack",
+      "mode": "nopki",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "already_consumed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A19",
+      "title": "Re-run an order that already ran (fresh challenge for the same op_id)",
+      "kind": "attack",
+      "mode": "dev",
+      "accepted": false,
+      "stopped_at": "website",
+      "reason": "already_consumed",
+      "user_prompted": true,
+      "note": "",
+      "correct": true
+    },
+    {
+      "id": "A20",
+      "title": "Revoked agent asks the wallet directly for a proof",
+      "kind": "attack",
+      "mode": "pki",
+      "accepted": false,
+      "stopped_at": "wallet",
+      "reason": "bad_signature (revoked)",
+      "user_prompted": false,
+      "note": "",
+      "correct": true
+    }
+  ],
+  "micro": {
+    "agent_request_sign": {
+      "n": 1000,
+      "median_ms": 0.123,
+      "p95_ms": 0.206,
+      "mean_ms": 0.13
+    },
+    "agent_request_verify": {
+      "n": 1000,
+      "median_ms": 0.404,
+      "p95_ms": 0.591,
+      "mean_ms": 0.435
+    },
+    "challenge_sign": {
+      "n": 1000,
+      "median_ms": 0.084,
+      "p95_ms": 0.126,
+      "mean_ms": 0.092
+    },
+    "challenge_verify": {
+      "n": 1000,
+      "median_ms": 0.285,
+      "p95_ms": 0.354,
+      "mean_ms": 0.297
+    },
+    "sizes_bytes": {
+      "agent_request_signature_header": 1595,
+      "challenge_signature_field": 1460,
+      "challenge_json_unsigned": 553,
+      "challenge_json_signed": 2028
+    }
+  },
+  "http": {
+    "pki": {
+      "n": 300,
+      "median_ms": 2.814,
+      "p95_ms": 3.499,
+      "mean_ms": 2.902
+    },
+    "nopki": {
+      "n": 300,
+      "median_ms": 1.718,
+      "p95_ms": 2.445,
+      "mean_ms": 1.829
+    },
+    "pki_overhead_median_ms": 1.096
+  },
+  "purchase": {
+    "pki": {
+      "n": 50,
+      "median_ms": 12.419,
+      "p95_ms": 25.789,
+      "mean_ms": 13.741,
+      "placed": 50
+    },
+    "pki_signed_requests_per_purchase": 4.0,
+    "nopki": {
+      "n": 50,
+      "median_ms": 7.464,
+      "p95_ms": 18.661,
+      "mean_ms": 8.936,
+      "placed": 50
+    },
+    "dev": {
+      "n": 50,
+      "median_ms": 7.411,
+      "p95_ms": 9.386,
+      "mean_ms": 7.948,
+      "placed": 50
+    },
+    "pki_overhead_median_ms": 4.955
+  },
+  "canonical": {
+    "spec_vectors": "3/3",
+    "website_operations": "67/67",
+    "edge_cases": {
+      "float": "PKI rejects (CanonicalEncodingError)",
+      "astral_key_order": "DIFFERENT bytes",
+      "unsafe_int": "PKI rejects (CanonicalEncodingError)",
+      "non_ascii_value": "same"
+    }
+  },
+  "regression": {
+    "pki (unit)": "44 passed, 1 warning in 1.16s",
+    "client": "48 passed, 6 subtests passed in 0.17s",
+    "agent": "20 passed in 1.28s",
+    "pki demo (mock parties)": "Legitimate acceptance rate:   100.0%  (3 scenarios) | Unauthorized acceptance rate:   0.0%  (18 scenarios, 36 attempts)"
+  }
+}
