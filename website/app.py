@@ -1,45 +1,8 @@
-r"""ZKARMA website (the relying party).
+"""ZKARMA shop: public catalog, age authorization at restricted checkout only.
 
-An age-restricted shop with two age checks. Both are "operations" and go
-through the same redeem checks.
-  1. Entering the site. One proof gets the agent a 30-minute session.
-  2. Each purchase. Every order needs its own proof, tied to that exact order.
-
-Proofs are checked with Longfellow (proofs.py).
-
-Run:
-    pip install -r website/requirements.txt
-    ZKARMA_DEV=1 python website/app.py
-
-One-time setup for real proofs (the fake "dev-proof" works without it):
-    cargo build --release --manifest-path zk/Cargo.toml
-    zk/target/release/zkage circuits --out zk/circuits-1attr.bin
-    # and put the test DMV's public key at trust/issuer_pub.json
-
-Dev mode fakes the agent's signature with a header and accepts the
-fake proof "dev-proof".
-    A='X-Dev-Agent-Thumbprint: test-agent'
-    J='Content-Type: application/json'
-
-    # 1. Ask to enter -> 401 with a challenge
-    curl -s -X POST localhost:5050/enter -H "$A"
-
-    # 2. Redeem it -> a session token
-    curl -s -X POST localhost:5050/redeem -H "$A" -H "$J" \
-         -d '{"nonce": "<nonce>", "proof": "dev-proof"}'
-
-    # 3. Browse with the session
-    S='Authorization: ZKARMA <session_token>'
-    curl -s localhost:5050/products -H "$A" -H "$S"
-
-    # 4. Start a purchase -> 401 with a new challenge for this order
-    curl -s -X POST localhost:5050/checkout -H "$A" -H "$S" -H "$J" \
-         -d '{"item_id": "wine-001", "quantity": 1}'
-
-    # 5. Redeem it the same way as step 2 -> order placed
-
-    # 6. Get a fresh nonce for an operation (a retry)
-    curl -s -X POST localhost:5050/operations/<op_id>/challenge -H "$A"
+Run: ZKARMA_DEV=1 python website/app.py
+The dev identity header and literal dev-proof are workflow stubs, not security.
+See agent/README.md for setup and the complete website/wallet/agent workflow.
 """
 from __future__ import annotations
 
@@ -63,32 +26,26 @@ ORIGIN = os.environ.get("ZKARMA_ORIGIN", "http://localhost:5050")
 PORT = int(os.environ.get("ZKARMA_PORT", "5050"))
 CLAIM = "age_over_18"
 NONCE_TTL_S = 120        # how long a challenge stays valid
-SESSION_TTL_S = 30 * 60  # how long one entry proof lets the agent browse
 MAX_QUANTITY = 10
 # Dev mode fakes the agent signature with a header and also accepts the fake
 # proof "dev-proof".
 DEV = os.environ.get("ZKARMA_DEV") == "1"
 
-# Everything here needs an age check. Prices are integer cents so the
-# canonical JSON never contains floats.
+# The website owns restriction policy and prices. Amounts are integer cents.
 CATALOG = {
-    "wine-001": {"name": "Red wine, 750 ml", "price_cents": 1999},
-    "vape-001": {"name": "Vape starter kit", "price_cents": 2499},
+    "wine-001": {"name": "Red wine, 750 ml", "price_cents": 1999, "age_restricted": True},
+    "water-001": {"name": "Sparkling water, 750 ml", "price_cents": 299, "age_restricted": False},
+    "vape-001": {"name": "Vape starter kit", "price_cents": 2499, "age_restricted": True},
 }
 
 app = Flask(__name__)
 # All in memory for now, so a restart forgets everything.
 OPERATIONS: dict[str, dict] = {}  # op_id -> {"operation": {...}, "agent_jkt": str, "status": str}
 NONCES: dict[str, dict] = {}      # nonce (hex) -> {"op_id": str, "now": str, "expires_at": float}
-SESSIONS: dict[str, dict] = {}    # token -> {"agent_jkt": str, "expires_at": float}
 CONSUMED: set[str] = set()        # op_ids that already ran
 _lock = threading.Lock()
 
 
-# ----------------------------------------------------------------------------
-# Shared spec. The wallet must build exactly the same bytes.
-# TODO: move into spec/ once the group agrees on the formats.
-# ----------------------------------------------------------------------------
 def operation_hash(operation: dict) -> bytes:
     """SHA-256 of the operation as canonical JSON (sorted keys, no spaces).
     Stand-in for RFC 8785, which gives the same bytes for what an operation
@@ -120,22 +77,6 @@ def consume(op_id: str) -> bool:
             return False
         CONSUMED.add(op_id)
         return True
-
-
-def issue_session(agent_jkt: str, ttl_s: int) -> str:
-    """A session token tied to the agent's key, so a stolen token is useless"""
-    token = secrets.token_urlsafe(32)
-    SESSIONS[token] = {"agent_jkt": agent_jkt, "expires_at": time.time() + ttl_s}
-    return token
-
-
-def session_agent(req) -> str | None:
-    """The agent a live session token was issued to, or None."""
-    scheme, _, token = req.headers.get("Authorization", "").partition(" ")
-    session = SESSIONS.get(token) if scheme == "ZKARMA" else None
-    if session is None or session["expires_at"] < time.time():
-        return None
-    return session["agent_jkt"]
 
 
 # ----------------------------------------------------------------------------
@@ -184,16 +125,12 @@ def challenge(record: dict):
 # ----------------------------------------------------------------------------
 @app.before_request
 def gate():
-    """Runs before every route. Every request except /health must be signed by
-    an agent, and /products and /checkout also need a session from /enter."""
-    if request.endpoint == "health":
+    """Browsing is public; operations still require the agent's identity."""
+    if request.endpoint is None or request.endpoint in ("health", "products"):
         return None
     g.agent_jkt = verify_agent_signature(request)
     if not g.agent_jkt:
         return reject("bad_signature", 401)
-    if request.endpoint in ("products", "checkout") and session_agent(request) != g.agent_jkt:
-        return (jsonify(error="entry_required", enter="/enter"), 401,
-                {"WWW-Authenticate": 'ZKARMA realm="site"'})
     return None
 
 
@@ -202,21 +139,16 @@ def health():
     return jsonify(ok=True, origin=ORIGIN, dev=DEV)
 
 
-@app.post("/enter")
-def enter():
-    """Start the entry check. One proof gets this agent a session."""
-    return challenge(new_operation("enter", duration_s=SESSION_TTL_S))
-
-
 @app.get("/products")
 def products():
-    """A page behind the entry check."""
-    return jsonify(products=[{"item_id": item_id, **item} for item_id, item in CATALOG.items()])
+    """Public catalog, including the website's restriction policy."""
+    return jsonify(products=[{"item_id": item_id, "currency": "USD", **item}
+                             for item_id, item in CATALOG.items()], max_quantity=MAX_QUANTITY)
 
 
 @app.post("/checkout")
 def checkout():
-    """Start a purchase. Needs a session, plus its own proof for this exact order."""
+    """Restricted items need a proof; unrestricted orders complete immediately."""
     body = request.get_json(silent=True)
     body = body if isinstance(body, dict) else {}
     item_id, quantity = body.get("item_id"), body.get("quantity")
@@ -226,9 +158,14 @@ def checkout():
         return reject("bad_request", 400)
     # The site sets the name and price. The agent only picks the item and quantity.
     item = CATALOG[item_id]
-    return challenge(new_operation(
+    record = new_operation(
         "checkout", item_id=item_id, item_name=item["name"], quantity=quantity,
-        amount_cents=item["price_cents"] * quantity, currency="USD"))
+        amount_cents=item["price_cents"] * quantity, currency="USD")
+    if item["age_restricted"]:
+        return challenge(record)
+    consume(record["operation"]["op_id"])
+    record["status"] = "placed"
+    return jsonify(status="placed", op_id=record["operation"]["op_id"])
 
 
 @app.post("/redeem")
@@ -271,10 +208,6 @@ def redeem():
         return reject("already_consumed", 409)
 
     # 7. Do the action.
-    if operation["action"] == "enter":
-        record["status"] = "entered"
-        token = issue_session(agent_jkt, operation["duration_s"])
-        return jsonify(status="entered", session_token=token, expires_in=operation["duration_s"])
     record["status"] = "placed"  # a real shop would charge and ship here
     return jsonify(status="placed", op_id=operation["op_id"])
 

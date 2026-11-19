@@ -1,0 +1,55 @@
+[
+  {
+    "origin": "http://localhost:5050",
+    "nonce": "0000000000000000000000000000000000000000000000000000000000000000",
+    "agent_jkt": "test-agent",
+    "operation": {
+      "v": "zkarma-op-1",
+      "site": "http://localhost:5050",
+      "action": "enter",
+      "op_id": "00000000000000000000000000000000",
+      "duration_s": 1800
+    },
+    "canonical_operation": "{\"action\":\"enter\",\"duration_s\":1800,\"op_id\":\"00000000000000000000000000000000\",\"site\":\"http://localhost:5050\",\"v\":\"zkarma-op-1\"}",
+    "operation_hash": "121f713089951a018bd18267d43512518b80c1a67b952a0ba9b5cc2a5c7bb4f8",
+    "transcript": "83f6f682685a4b41524d4176315820b0ba866674f5dbf560e9feb99d48700e0b4439cf03dadcb4dc20bac8172601e7"
+  },
+  {
+    "origin": "http://localhost:5050",
+    "nonce": "abababababababababababababababababababababababababababababababab",
+    "agent_jkt": "agent-2",
+    "operation": {
+      "v": "zkarma-op-1",
+      "site": "http://localhost:5050",
+      "action": "checkout",
+      "op_id": "ffffffffffffffffffffffffffffffff",
+      "item_id": "wine-001",
+      "item_name": "Red wine, 750 ml",
+      "quantity": 2,
+      "amount_cents": 3998,
+      "currency": "USD"
+    },
+    "canonical_operation": "{\"action\":\"checkout\",\"amount_cents\":3998,\"currency\":\"USD\",\"item_id\":\"wine-001\",\"item_name\":\"Red wine, 750 ml\",\"op_id\":\"ffffffffffffffffffffffffffffffff\",\"quantity\":2,\"site\":\"http://localhost:5050\",\"v\":\"zkarma-op-1\"}",
+    "operation_hash": "7e676384464f8a65dfe16ff71e21e9757d80116f52baabb64b7fd43615488dd7",
+    "transcript": "83f6f682685a4b41524d4176315820691265f5de31187b634f2b5f5af1c356e3be8e6b95c4a80436ec9a85ae9240d1"
+  },
+  {
+    "origin": "https://shop.example",
+    "nonce": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+    "agent_jkt": "agent-é",
+    "operation": {
+      "v": "zkarma-op-1",
+      "site": "https://shop.example",
+      "action": "checkout",
+      "op_id": "11111111111111111111111111111111",
+      "item_id": "vape-001",
+      "item_name": "Café kit",
+      "quantity": 1,
+      "amount_cents": 2499,
+      "currency": "EUR"
+    },
+    "canonical_operation": "{\"action\":\"checkout\",\"amount_cents\":2499,\"currency\":\"EUR\",\"item_id\":\"vape-001\",\"item_name\":\"Café kit\",\"op_id\":\"11111111111111111111111111111111\",\"quantity\":1,\"site\":\"https://shop.example\",\"v\":\"zkarma-op-1\"}",
+    "operation_hash": "f2eede62a552ebefd0e31f8637794651f22324a03567e4bf35aa331f8900febe",
+    "transcript": "83f6f682685a4b41524d4176315820c315bc6444c9ae72c51006a6e35b7717451fd092cbf4885818a9142ab6441309"
+  }
+]
