@@ -16,7 +16,7 @@ everything goes through the (untrusted) agent.
 ```
 pip install -r client/requirements.txt
 python client/wallet.py allow-origin http://localhost:5050
-python client/wallet.py pair test-agent --name "Test agent"
+python client/wallet.py pair safe-agent --name "Safe agent"
 
 ZKARMA_DEV=1 python website/app.py          # terminal 1
 ZKARMA_DEV=1 python client/wallet.py serve  # terminal 2: approve or deny here
@@ -108,6 +108,18 @@ Run the tests from the repo root:
 ```
 ZKARMA_DEV=1 python -m unittest discover -s client/tests -v
 ```
+
+## Checkout-only website integration
+
+The website catalog is public. The agent calls `GET /products` without an entry
+proof or session, then `POST /checkout`. Restricted items return a challenge;
+unrestricted items return an order result directly. `/enter` and entry sessions
+have been removed from this website. The wallet still understands legacy `enter`
+operations for format compatibility, but the safe agent never requests them.
+
+`client/demo_agent.py` now runs the shared safe-agent relay with a fixed product;
+it no longer attempts entry or deliberately repeats a completed order. See
+[`agent/README.md`](../agent/README.md) for the DeepSeek agent and complete setup.
 
 ## Stubs (to be replaced together, later)
 
