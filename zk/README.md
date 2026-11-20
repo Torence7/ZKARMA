@@ -18,9 +18,14 @@ Needs only [rustup](https://rustup.rs). `rust-toolchain.toml` pins Rust
 1.99.0 and rustup installs it automatically. No CMake, OpenSSL or Docker.
 
 ```bash
-cargo build --release --manifest-path zk/Cargo.toml          # ~1 min the first time
-zk/target/release/zkage circuits --out zk/circuits-1attr.bin  # 480 KB, 1-attribute circuit
+cd zk
+cargo build --release                                # ~1 min the first time
+target/release/zkage circuits --out circuits-1attr.bin  # 480 KB, 1-attribute circuit
 ```
+
+Run cargo from inside `zk/`: rustup picks the toolchain and cargo picks up
+`.cargo/config.toml` based on the current directory, not `--manifest-path`.
+From the repo root you get the system Rust, which fails on older versions.
 
 These are the paths `website/proofs.py` and `client/zkage.py` look for by
 default; override them with `ZKAGE_BIN` / `ZKAGE_CIRCUITS`. Both outputs are
