@@ -57,28 +57,6 @@ demo/
 tests/test_pki.py
 ```
 
-## Design decisions (worth agreeing on as a team)
-
-1. **Hierarchy.** One test root and three intermediates (Issuer CA, Website CA,
-   Agent CA). A leaf is only accepted if it was issued by _the CA for the
-   expected role_ and carries exactly that role in its Extended Key Usage, so
-   an agent cert can never pass as a website cert.
-2. **Trust bundle out of band.** `pki_out/trust_bundle/` is installed into
-   the client and website config. It is never fetched through an agent.
-   Certificates and CRLs may travel any route (they're signed); the root may not.
-3. **No certified client key.** The wallet makes **one key per website** and
-   registers it directly (QR code or link), self-signed as proof of possession
-   and naming the site. Sites can't link a user across sites by key.
-   _(Open question for P & T: how registration works in your UI.)_
-4. **Short-lived agent certs (24 h) + CRLs.** These cover adaptive corruption. Verification
-   fails closed if a CRL is missing, stale, forged or rolled back.
-5. **Signed envelopes with purpose separation.** Every protocol message is
-   `sign(key, purpose, payload)`. The purpose is inside the signature, so a
-   challenge signature can't be replayed as an authorization.
-6. **One algorithm: ECDSA P-256 / ES256**, raw r‖s signatures (JWS/WebCrypto
-   compatible). P-256 is what mDLs and Longfellow use.
-7. **Canonical encoding.** No floats (use integer cents / Unix seconds).
-   Non-Python teammates can use any RFC 8785 library and get identical bytes.
 
 ## Message flow in the dummy workflow
 
