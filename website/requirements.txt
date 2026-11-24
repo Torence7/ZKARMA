@@ -1,2 +1,3 @@
 flask
 cbor2
+cryptography>=42
