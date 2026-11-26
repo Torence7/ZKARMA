@@ -1,0 +1,5 @@
+# Longfellow needs a recent stable Rust (it uses carrying_add). rustup installs
+# this version automatically the first time cargo runs in zk/.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"

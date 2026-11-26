@@ -7,3 +7,5 @@ __pycache__/
 .env
 .env.*
 !.env.example
+zk/target
+zk/*.bin

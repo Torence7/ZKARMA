@@ -1,0 +1,15 @@
+# Longfellow is several times faster with the CPU's AES/PCLMUL/SHA instructions
+# (proving ~5.5 s -> under 1 s). Each machine builds its own zkage, so "native"
+# is fine; proofs are the same format either way. For a binary you copy to
+# another machine, build with RUSTFLAGS="" instead.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-feature=+aes,+sha2"]

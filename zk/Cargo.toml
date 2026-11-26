@@ -1,0 +1,25 @@
+[package]
+name = "zkage"
+version = "0.1.0"
+edition = "2021"
+description = "ZKARMA's command-line wrapper around Google's Longfellow ZK (mdoc age proofs)"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# Pinned to one commit: proofs made by one build must verify on another.
+# Only the runtime roles are enabled; the circuit compiler is not needed
+# because the frozen v1 circuits are checked into Longfellow's repo.
+longfellow-zk = { git = "https://github.com/google/longfellow-zk", rev = "1424f50e4eacd50354f6743e57fb7a3a390ca7d7", default-features = false, features = ["prover", "verifier", "mdoc", "v1"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+
+[dev-dependencies]
+# Only for examples/export_vectors.rs, which writes Longfellow's test mDLs to testdata/.
+longfellow-zk = { git = "https://github.com/google/longfellow-zk", rev = "1424f50e4eacd50354f6743e57fb7a3a390ca7d7", default-features = false, features = ["prover", "verifier", "mdoc", "v1", "testonly"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
