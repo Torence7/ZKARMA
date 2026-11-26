@@ -162,14 +162,23 @@ mdoc = mdl.present(transcript)                      # DeviceResponse, DeviceAuth
 proof_hex, metrics = zkage.prove(mdoc, **...)       # see integration/mdl_adapters.make_wallet_prover
 ```
 
-**What each module changes**
+**What each module on `main` changes** (exact diff: `integration/main_hooks.patch`,
+applies cleanly to `main`; every hook is inert unless its env var is set)
 
-| Module | Change |
-|---|---|
-| Wallet (`client/prover.py`) | `prove(transcript, now, claim)` keeps its signature. Body becomes `return make_wallet_prover(Mdl.load(MDL_PATH))(transcript, now, claim)` (`integration/mdl_adapters.py`). The wallet stores the `mdl-issue` JSON file. |
-| Website, `main` (`site_pki.py`) | **Nothing.** It already reads `pki_out/issued/issuer/test-dmv/cert.pem`, the same key `mdl-issue` signs with. Tested: `integration/test_main_website_mdl.py`. |
-| Website, without PKI mode | Write `trust/issuer_pub.json` with `mdl-issuer-pub`; `proofs.py` unchanged. |
-| Agent | Nothing: it never sees the mDL, only the proof. |
+| Module | Change | Lines | For |
+|---|---|---|---|
+| Website (`site_pki.py`) | **Nothing.** It already reads `pki_out/issued/issuer/test-dmv/cert.pem`, the same key `mdl-issue` signs with. | 0 | mDL + PKI |
+| Wallet `client/prover.py` | With `ZKARMA_MDL=<mdl-issue file>`, `prove(transcript, now, claim)` (same signature) returns a real Longfellow proof via `make_wallet_prover`. | +10 | mDL |
+| Wallet `client/validate.py` | With `ZKARMA_TRUST_BUNDLE`, `check_signature` verifies the website's PKI signature instead of `spec.stub_verify`. Without this, `main`'s wallet rejects every challenge from `main`'s website in PKI mode (`bad_website_signature`). | +28 | PKI |
+| Wallet `client/wallet.py` | With `ZKARMA_TRUST_BUNDLE`, `agent_identity` verifies the agent's signed request (pair the agent by its certificate thumbprint). | +15 | PKI |
+| Agent `agent/__main__.py` | With `ZKARMA_AGENT_KEY/CERT`, wraps its transport in `SignedTransport`. | +11 | PKI |
+| Website, without PKI mode | Write `trust/issuer_pub.json` with `mdl-issuer-pub`; `proofs.py` unchanged. | 0 | mDL |
+
+Tested on `main`'s real processes (website, wallet and agent as separate programs,
+dev mode off everywhere, real Longfellow proofs): adult mDL -> order placed;
+under-18 mDL -> wallet cannot prove; foreign-DMV mDL -> website `proof_invalid`;
+unsigned agent -> 401. With the env vars unset, `main`'s own test suites pass
+unchanged.
 
 **Format.** Field order and encodings match Longfellow's own test mDLs byte for
 byte (`tests/test_mdl.py::test_layout_matches_longfellow_vectors`). The

@@ -63,6 +63,7 @@ scenarios pass this way, against this branch's website and against `main`'s.
 | `mdl_adapters.py` | `make_wallet_prover(mdl)`: drop-in for `client/prover.prove` using a PKI-issued mDL + Longfellow; `write_issuer_pub()` for `website/proofs.py` |
 | `test_mdl_longfellow.py` | Real Longfellow: website accepts, proof bound to nonce/agent/operation/origin, retry gets a fresh proof, minor/expired/untrusted DMV/stolen mDL fail, full-system purchase |
 | `test_main_website_mdl.py` | `main`'s website, unmodified, as its own process in PKI mode, with real proofs (needs `ZKARMA_MAIN_REPO`) |
+| `main_hooks.patch` | The small hooks `main`'s wallet and agent need for PKI mode + real proofs (`git apply integration/main_hooks.patch` in a `main` checkout that has this branch's `pki/` and `integration/`). Inert unless `ZKARMA_TRUST_BUNDLE` / `ZKARMA_MDL` / `ZKARMA_AGENT_KEY` are set. |
 | `bench_mdl.py` | n trials of issue -> DeviceAuth -> prove -> website verify, success rates and timings |
 
 ## Integration gaps found (need a team decision)

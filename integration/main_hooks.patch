@@ -1,0 +1,107 @@
+diff -ru a/agent/__main__.py b/agent/__main__.py
+--- a/agent/__main__.py	2026-11-26 20:14:50.132717550 +0000
++++ b/agent/__main__.py	2026-11-26 20:14:50.134300930 +0000
+@@ -25,7 +25,17 @@
+         parser.error("Choose --item or --task")
+     try:
+         site = args.site or input("Website [http://localhost:5050]: ").strip() or "http://localhost:5050"
+-        agent = SafeAgent(site, args.wallet, args.agent, approval_timeout=args.approval_timeout,
++        http = None
++        if os.environ.get("ZKARMA_AGENT_KEY"):          # PKI hook: sign every request
++            import sys
++            from pathlib import Path
++            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pki"))
++            from integration.pki_adapters import AgentRequestSigner, SignedTransport
++            from zkarma_pki import load_cert, load_private_key
++            from .http import JsonHTTP
++            http = SignedTransport(AgentRequestSigner(load_private_key(os.environ["ZKARMA_AGENT_KEY"]),
++                                                      load_cert(os.environ["ZKARMA_AGENT_CERT"])), JsonHTTP())
++        agent = SafeAgent(site, args.wallet, args.agent, http=http, approval_timeout=args.approval_timeout,
+                           max_refreshes=args.max_refreshes, max_total_cents=args.max_total_cents)
+         products = agent.browse_products()
+         if args.item:
+diff -ru a/client/prover.py b/client/prover.py
+--- a/client/prover.py	2026-11-26 20:14:50.108278077 +0000
++++ b/client/prover.py	2026-11-26 20:14:50.109948832 +0000
+@@ -18,6 +18,16 @@
+ 
+ 
+ def prove(transcript: bytes, now: str, claim: str) -> str:
++    # --- the documented change: real Longfellow proof from the wallet's test mDL ---
++    import os
++    if os.environ.get("ZKARMA_MDL"):
++        import sys
++        from config import ROOT
++        sys.path.insert(0, str(ROOT / "pki"))
++        from integration.mdl_adapters import make_wallet_prover
++        from zkarma_pki.mdl import Mdl
++        return make_wallet_prover(Mdl.load(os.environ["ZKARMA_MDL"]))(transcript, now, claim)
++    # --- end of change ---
+     if DEV:
+         return DEV_PROOF
+     raise NotImplementedError(
+diff -ru a/client/validate.py b/client/validate.py
+--- a/client/validate.py	2026-11-26 20:14:50.116787731 +0000
++++ b/client/validate.py	2026-11-26 20:14:50.118517271 +0000
+@@ -36,7 +36,35 @@
+     return type(v) is int  # JSON true would pass isinstance(v, int)
+ 
+ 
++
++# --- PKI hook (ZKARMA_TRUST_BUNDLE set): adapters from integration/pki_adapters.py ---
++def _pki():
++    import os, sys
++    from config import ROOT
++    if not os.environ.get("ZKARMA_TRUST_BUNDLE"):
++        return None
++    sys.path.insert(0, str(ROOT / "pki"))
++    from zkarma_pki import TrustStore
++    return TrustStore.from_bundle(os.environ["ZKARMA_TRUST_BUNDLE"])
++
++
+ def check_signature(message: dict) -> bool:
++    trust = _pki()
++    if trust is not None:
++        from integration.pki_adapters import verify_website_message
++        from zkarma_pki import VerificationError
++        if message.get("signature") is None:
++            raise Refused("unsigned")
++        try:
++            verify_website_message(message, message["signature"], trust,
++                                   message.get("origin", message.get("site")), spec.signed_payload)
++        except VerificationError:
++            raise Refused("bad_website_signature") from None
++        return True
++    return _stub_check_signature(message)
++
++
++def _stub_check_signature(message: dict) -> bool:
+     """True if signed, False if unsigned and dev mode allows that. Raises otherwise.
+     STUB: spec.stub_verify until the PKI gives us the website's key."""
+     sig = message.get("signature")
+diff -ru a/client/wallet.py b/client/wallet.py
+--- a/client/wallet.py	2026-11-26 20:14:50.124290204 +0000
++++ b/client/wallet.py	2026-11-26 20:14:50.125758640 +0000
+@@ -53,7 +53,22 @@
+ from validate import Refused, check_status, validate_challenge
+ 
+ 
++_VERIFIER = None
++
++
+ def agent_identity(req) -> str | None:
++    from validate import _pki
++    global _VERIFIER
++    trust = _pki() if _VERIFIER is None else True
++    if trust is not None:
++        if _VERIFIER is None:
++            from integration.pki_adapters import RequestVerifier
++            _VERIFIER = RequestVerifier(trust, f"http://127.0.0.1:{PORT}")
++        return _VERIFIER.flask_identity(req)
++    return _stub_agent_identity(req)
++
++
++def _stub_agent_identity(req) -> str | None:
+     """STUB, same as the website: dev mode takes the agent's key thumbprint
+     from a header. Real agents will sign requests (Web Bot Auth)."""
+     if DEV:
