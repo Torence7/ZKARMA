@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -100,7 +101,8 @@ def test_wallet_view(mdl):
 def test_save_load_roundtrip(tmp_path, world, mdl):
     p = tmp_path / "wallet" / "mdl.json"
     mdl.save(p)
-    assert oct(p.stat().st_mode & 0o777) == "0o600"
+    if os.name != "nt":                      # Windows has no Unix permission bits (always 0o666)
+        assert oct(p.stat().st_mode & 0o777) == "0o600"
     again = Mdl.load(p)
     tr = transcript()
     check(again.present(tr), tr, world[1])
@@ -313,6 +315,7 @@ def test_from_pki_never_replaces_existing_dmv_cert(tmp_path):
     assert cert_file.read_bytes() == before
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no Unix permission bits")
 def test_save_never_world_readable(tmp_path, mdl):
     p = tmp_path / "mdl.json"
     p.write_text("{}")
