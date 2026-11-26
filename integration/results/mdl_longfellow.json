@@ -1,0 +1,42 @@
+{
+  "n": 30,
+  "proved": 30,
+  "website_accepted": 30,
+  "rejected_for_other_nonce": 30,
+  "timings_ms": {
+    "issue_ms": {
+      "median": 0.69,
+      "p95": 0.81,
+      "min": 0.49,
+      "max": 0.85
+    },
+    "device_sign_ms": {
+      "median": 0.11,
+      "p95": 0.16,
+      "min": 0.07,
+      "max": 0.23
+    },
+    "prove_ms": {
+      "median": 714.35,
+      "p95": 770.63,
+      "min": 625.82,
+      "max": 822.97
+    },
+    "website_verify_ms": {
+      "median": 278.81,
+      "p95": 306.39,
+      "min": 232.64,
+      "max": 359.34
+    }
+  },
+  "proof_bytes": {
+    "median": 360148.0,
+    "p95": 361140,
+    "min": 359444,
+    "max": 361556
+  },
+  "mdoc_bytes": 1452,
+  "issuer_signed_bytes": 1685,
+  "machine": "x86_64 x86_64",
+  "note": "prove_ms is zkage's own timer; website_verify_ms includes the subprocess"
+}

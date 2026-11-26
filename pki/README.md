@@ -49,36 +49,16 @@ zkarma_pki/
   signing.py     signed envelopes (sign / verify / verify_with_cert) with purpose separation
   registry.py    pairwise client keys: ClientKeyring (wallet), ClientKeyRegistry (website)
   directory.py   FastAPI directory service (certs, CRLs, admin issue/revoke)
+  mdl.py         test mDLs (ISO 18013-5 mdoc) from the test DMV, for real Longfellow proofs
   cli.py         command-line tool
 demo/
   mock_parties.py   MOCK issuer, Longfellow, client, agent, website  ("PKI HOOK" = real calls)
   run_demo.py       dummy workflow + adversarial scenarios + acceptance-rate metrics
   bench_pki.py      latency micro-benchmark
 tests/test_pki.py
+tests/test_mdl.py   mDL issuance/presentation/verification (no Longfellow needed)
 ```
 
-## Design decisions (worth agreeing on as a team)
-
-1. **Hierarchy.** One test root and three intermediates (Issuer CA, Website CA,
-   Agent CA). A leaf is only accepted if it was issued by _the CA for the
-   expected role_ and carries exactly that role in its Extended Key Usage, so
-   an agent cert can never pass as a website cert.
-2. **Trust bundle out of band.** `pki_out/trust_bundle/` is installed into
-   the client and website config. It is never fetched through an agent.
-   Certificates and CRLs may travel any route (they're signed); the root may not.
-3. **No certified client key.** The wallet makes **one key per website** and
-   registers it directly (QR code or link), self-signed as proof of possession
-   and naming the site. Sites can't link a user across sites by key.
-   _(Open question for P & T: how registration works in your UI.)_
-4. **Short-lived agent certs (24 h) + CRLs.** These cover adaptive corruption. Verification
-   fails closed if a CRL is missing, stale, forged or rolled back.
-5. **Signed envelopes with purpose separation.** Every protocol message is
-   `sign(key, purpose, payload)`. The purpose is inside the signature, so a
-   challenge signature can't be replayed as an authorization.
-6. **One algorithm: ECDSA P-256 / ES256**, raw r‖s signatures (JWS/WebCrypto
-   compatible). P-256 is what mDLs and Longfellow use.
-7. **Canonical encoding.** No floats (use integer cents / Unix seconds).
-   Non-Python teammates can use any RFC 8785 library and get identical bytes.
 
 ## Message flow in the dummy workflow
 
@@ -146,11 +126,95 @@ Get a cert with `cli issue pki_out agent <id> --pubkey <pem>` or
 `POST /admin/issue`. If you follow Web Bot Auth (RFC 9421 HTTP message
 signatures), the same agent key/cert works there.
 
-**Longfellow integration (whoever owns it).** Replace `mock_zk_prove` /
-`mock_zk_verify`. The PKI supplies (a) the verified issuer public key and
-(b) `canonical_hash(authorization)` as the value the device key signs in
-place of the verifier nonce. The issuer key format Longfellow expects still
-needs checking against its repo/test vectors.
+**Longfellow integration.** Done with real proofs: see "Test mDLs" below.
+
+## Test mDLs for real Longfellow proofs (`mdl.py`)
+
+**Problem.** Longfellow proves facts about an mDL whose *device key* signed
+DeviceAuthentication over a *session transcript*. The test mDLs shipped with
+Longfellow were signed over their own fixed transcripts, and we don't have
+their issuer or device private keys, so they can't be bound to a ZKARMA
+challenge. `demo/mock_parties.py` only had a JSON mock credential.
+
+**What this adds.** A real ISO/IEC 18013-5 mdoc whose Mobile Security Object
+is signed (COSE_Sign1, ES256, x5chain) by the test DMV's **issuer-role key
+from this PKI**, holding a **device key the wallet controls**. For each
+challenge the wallet signs DeviceAuthentication over
+`spec.build_transcript(origin, nonce, agent_jkt, operation_hash)` and hands
+the DeviceResponse to `client/zkage.py`. The website verifies with its
+unchanged `website/proofs.py` and the DMV key from the PKI-verified issuer
+certificate.
+
+```bash
+cd pki
+python -m zkarma_pki.cli init pki_out                                   # includes test-dmv
+python -m zkarma_pki.cli mdl-issue pki_out ../wallet_mdl.json           # adult (born 2000-01-01)
+python -m zkarma_pki.cli mdl-issue pki_out ../minor_mdl.json --birth-date 2012-06-01
+python -m zkarma_pki.cli mdl-issuer-pub pki_out ../trust/issuer_pub.json   # for website/proofs.py
+python -m zkarma_pki.cli mdl-show ../wallet_mdl.json
+```
+
+```python
+from zkarma_pki.mdl import Mdl, MdlIssuer
+issuer = MdlIssuer.from_pki(pki)                    # test-dmv key + cert from pki_out
+mdl = issuer.issue_to_new_device()                  # or issuer.issue(device_public_key) -> IssuerSigned
+mdoc = mdl.present(transcript)                      # DeviceResponse, DeviceAuth over THIS transcript
+proof_hex, metrics = zkage.prove(mdoc, **...)       # see integration/mdl_adapters.make_wallet_prover
+```
+
+**What each module on `main` changes** (exact diff: `integration/main_hooks.patch`,
+applies cleanly to `main`; every hook is inert unless its env var is set)
+
+| Module | Change | Lines | For |
+|---|---|---|---|
+| Website (`site_pki.py`) | **Nothing.** It already reads `pki_out/issued/issuer/test-dmv/cert.pem`, the same key `mdl-issue` signs with. | 0 | mDL + PKI |
+| Wallet `client/prover.py` | With `ZKARMA_MDL=<mdl-issue file>`, `prove(transcript, now, claim)` (same signature) returns a real Longfellow proof via `make_wallet_prover`. | +10 | mDL |
+| Wallet `client/validate.py` | With `ZKARMA_TRUST_BUNDLE`, `check_signature` verifies the website's PKI signature instead of `spec.stub_verify`. Without this, `main`'s wallet rejects every challenge from `main`'s website in PKI mode (`bad_website_signature`). | +28 | PKI |
+| Wallet `client/wallet.py` | With `ZKARMA_TRUST_BUNDLE`, `agent_identity` verifies the agent's signed request (pair the agent by its certificate thumbprint). | +15 | PKI |
+| Agent `agent/__main__.py` | With `ZKARMA_AGENT_KEY/CERT`, wraps its transport in `SignedTransport`. | +11 | PKI |
+| Website, without PKI mode | Write `trust/issuer_pub.json` with `mdl-issuer-pub`; `proofs.py` unchanged. | 0 | mDL |
+
+Tested on `main`'s real processes (website, wallet and agent as separate programs,
+dev mode off everywhere, real Longfellow proofs): adult mDL -> order placed;
+under-18 mDL -> wallet cannot prove; foreign-DMV mDL -> website `proof_invalid`;
+unsigned agent -> 401. With the env vars unset, `main`'s own test suites pass
+unchanged.
+
+**Format.** Field order and encodings match Longfellow's own test mDLs byte for
+byte (`tests/test_mdl.py::test_layout_matches_longfellow_vectors`). The
+reference verifier `verify_device_response()` also accepts all three of
+Longfellow's vectors, so the DeviceAuthentication bytes are proven compatible
+with an independent implementation. `validFrom` is backdated 1 minute
+(`CLOCK_SKEW`), like the CA's certificates, because Longfellow rejects
+`now < validFrom`.
+
+**Measured limit.** Longfellow's v1 circuit hashes the whole MSO in the proof:
+7 data elements (MSO 553 B) prove, 8 (588 B) fail with an opaque
+`GeneralFailure`. `MdlIssuer` refuses more than 7 (`MAX_ELEMENTS`). The default
+mDL has 6: family_name, given_name, birth_date, issuing_country, age_over_18,
+age_over_21.
+
+**Results (Intel Xeon 2.1 GHz, 4 vCPU, `target-cpu=native`, n=30):** 30/30
+proved, 30/30 accepted by `website/proofs.py`, 30/30 rejected when replayed
+under another nonce. Issue 0.69 ms, DeviceAuth signature 0.11 ms, prove 714 ms
+median (p95 771), website verify 279 ms (p95 306, includes subprocess), proof
+360 KB, mdoc 1.45 KB. Raw: `integration/results/mdl_longfellow.json`.
+
+**Independent ISO check.** `tests/test_mdl_iso_conformance.py` verifies our mDLs
+with pymdoccbor (IdentityPython's mdoc library): issuer signature, element
+digests and the chain to the PKI's Issuer CA all pass; another PKI's root and a
+tampered element are rejected. Optional: skipped unless `pip install pymdoccbor`.
+
+**Reference verifier.** `verify_device_response()` is a plain (not ZK) check of
+what Longfellow proves, for tests and debugging; a website never sees the mdoc.
+It raises only `VerificationError` for bad input (fuzzed with byte flips and
+deleted keys), compares attribute values type-strictly (CBOR `true`, not `1`),
+and requires the signed empty DeviceNameSpaces.
+
+**Limits.** The wallet's device key is stored in a JSON file (test only; a real
+device key lives in secure hardware). Issuer certificates don't carry the ISO
+DS EKU or IACA chain; Longfellow doesn't check them, our PKI does the
+equivalent with the issuer role.
 
 ## Current results
 
@@ -168,8 +232,8 @@ proving.
 
 ## Known limitations / next steps
 
-- **ZK proof is a mock that reveals the credential**, including a device key that
-  would link users. Longfellow fixes this; the PKI calls stay the same.
+- The dummy workflow in `demo/` still uses the JSON mock credential. Real mDLs and
+  Longfellow proofs are in `mdl.py` and `integration/` (see "Test mDLs" above).
 - Agent and website identities in the mock are fixed per run. Proposal Table 1's
   "no permanent agent-user link" needs per-site agent keys. That's easy to add via
   `cli issue` with a site-scoped name, but it's a design call for V.

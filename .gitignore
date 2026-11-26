@@ -11,3 +11,5 @@ zk/*.bin
 .env
 .env.*
 !.env.example
+zk/target
+zk/*.bin
