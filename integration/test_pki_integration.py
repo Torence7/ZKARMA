@@ -27,6 +27,12 @@ from zkarma_pki.keys import cert_to_pem  # noqa: E402
 from integration.pki_adapters import issuer_pub_json, jwk_thumbprint  # noqa: E402
 
 MAIN_WEBSITE = os.environ.get("ZKARMA_MAIN_WEBSITE")
+if not MAIN_WEBSITE:
+    # In a main checkout (after merging this branch) main's own website is right here:
+    # it has the optional /enter check (ZKARMA_ENTRY_CHECK) and website/site_pki.py.
+    _here = Path(__file__).resolve().parents[1] / "website"
+    if (_here / "site_pki.py").exists() and "ENTRY_CHECK" in (_here / "app.py").read_text():
+        MAIN_WEBSITE = str(_here / "app.py")
 
 
 @pytest.mark.parametrize("sc", SCENARIOS, ids=lambda sc: sc.id)

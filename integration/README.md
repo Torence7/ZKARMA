@@ -1,5 +1,7 @@
 # integration/: preliminary test of the PKI with the current system
 
+> Adopting this in your module: see [../ADOPTING_PKI.md](../ADOPTING_PKI.md).
+
 This folder runs the PKI (`pki/zkarma_pki`) **together with the real
 website (`website/app.py`), wallet (`client/wallet.py`) and safe agent
 (`agent/`)** over real HTTP on 127.0.0.1. No file outside `integration/` is

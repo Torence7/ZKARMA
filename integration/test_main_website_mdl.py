@@ -11,6 +11,7 @@ wallet (zkarma_pki.mdl + client/zkage.py). Skipped unless ZKARMA_MAIN_REPO
 points at a checkout of main and zkage is built:
 
     ZKARMA_MAIN_REPO=../ZKARMA-main python -m pytest -q integration/test_main_website_mdl.py
+    python -m pytest -q integration/test_main_website_mdl.py      # inside a main checkout
 """
 from __future__ import annotations
 
@@ -35,7 +36,10 @@ from spec.zkarma_spec import build_transcript, operation_hash
 from zkarma_pki import PKI, Role
 from zkarma_pki.mdl import MdlIssuer
 
-MAIN = Path(os.environ.get("ZKARMA_MAIN_REPO", "/nonexistent"))
+_REPO = Path(__file__).resolve().parents[1]
+# Default: this checkout, if it is main (has website/site_pki.py), e.g. after merging this branch.
+MAIN = Path(os.environ.get("ZKARMA_MAIN_REPO") or
+            (_REPO if (_REPO / "website" / "site_pki.py").exists() else "/nonexistent"))
 pytestmark = pytest.mark.skipif(
     not ((MAIN / "website" / "site_pki.py").exists() and zkage.available()),
     reason="set ZKARMA_MAIN_REPO to a main checkout (with website/site_pki.py) and build zkage")

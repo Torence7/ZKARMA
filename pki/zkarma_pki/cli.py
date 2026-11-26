@@ -12,6 +12,9 @@ Test mDLs (ISO 18013-5 mdoc) from the test DMV, for real Longfellow proofs:
     python -m zkarma_pki.cli mdl-issue      pki_out wallet_mdl.json --device-pubkey dev_pub.pem
     python -m zkarma_pki.cli mdl-issuer-pub pki_out trust/issuer_pub.json   # for website/proofs.py
     python -m zkarma_pki.cli mdl-show       wallet_mdl.json
+
+Wallet pairing id (agent_jkt = RFC 7638 thumbprint of the agent's certified key):
+    python -m zkarma_pki.cli thumbprint pki_out/issued/agent/safe-agent/cert.pem
 """
 from __future__ import annotations
 
@@ -126,6 +129,16 @@ def cmd_mdl_show(a):
                       **mdl.issuer_coords()}, indent=2))
 
 
+def cmd_thumbprint(a):
+    import base64
+    import hashlib
+    from .keys import load_cert
+    n = load_cert(Path(a.cert)).public_key().public_numbers()
+    b64 = lambda i: base64.urlsafe_b64encode(i.to_bytes(32, "big")).rstrip(b"=").decode()  # noqa: E731
+    jwk = json.dumps({"crv": "P-256", "kty": "EC", "x": b64(n.x), "y": b64(n.y)}, separators=(",", ":"))
+    print(base64.urlsafe_b64encode(hashlib.sha256(jwk.encode()).digest()).rstrip(b"=").decode())
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="zkarma-pki")
     sub = p.add_subparsers(required=True)
@@ -150,6 +163,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_mdl_issuer_pub)
     s = sub.add_parser("mdl-show", help="show a test mDL file")
     s.add_argument("file"); s.set_defaults(fn=cmd_mdl_show)
+    s = sub.add_parser("thumbprint", help="agent_jkt (RFC 7638) of a certificate, for wallet pairing")
+    s.add_argument("cert"); s.set_defaults(fn=cmd_thumbprint)
     a = p.parse_args(argv)
     a.fn(a)
 

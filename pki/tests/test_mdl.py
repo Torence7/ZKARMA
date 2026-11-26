@@ -444,3 +444,18 @@ def test_cli_issue_to_wallet_generated_key(tmp_path):
                            attributes={"age_over_18": True})
     with pytest.raises(ValueError):                       # someone else's key: refused up front
         Mdl((tmp_path / "issuer_signed.cbor").read_bytes(), generate_key())
+
+
+def test_cli_thumbprint_matches_integration_adapter(tmp_path, capsys):
+    """The pairing id printed by the CLI must equal the agent_jkt the website and
+    wallet compute (integration/pki_adapters.jwk_thumbprint)."""
+    sys.path.insert(0, str(REPO))
+    from integration.pki_adapters import jwk_thumbprint
+    from zkarma_pki import cli
+    from zkarma_pki.keys import load_cert
+    out = tmp_path / "pki_out"
+    cli.main(["init", str(out)])
+    capsys.readouterr()
+    cert = out / "issued" / "agent" / "agent-1" / "cert.pem"
+    cli.main(["thumbprint", str(cert)])
+    assert capsys.readouterr().out.strip() == jwk_thumbprint(load_cert(cert).public_key())
