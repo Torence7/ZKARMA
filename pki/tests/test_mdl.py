@@ -197,9 +197,21 @@ def test_outside_validity(world, mdl, now):
         check(mdl.present(tr), tr, world[1], now=now)
 
 
+def forged_holder(issuer_signed, key):
+    """A thief doesn't use our constructor's key check: build the object around it."""
+    m = object.__new__(Mdl)
+    m.issuer_signed, m.device_key, m.doc_type = issuer_signed, key, DOC_TYPE
+    return m
+
+
+def test_wallet_file_with_wrong_device_key_refused(mdl):
+    with pytest.raises(ValueError, match="does not match"):
+        Mdl(mdl.issuer_signed, generate_key())
+
+
 def test_wrong_device_key(world, mdl):
     """A thief with the issuer-signed data but not the device key."""
-    thief = Mdl(mdl.issuer_signed, generate_key())
+    thief = forged_holder(mdl.issuer_signed, generate_key())
     tr = transcript()
     with pytest.raises(VerificationError, match="mdl_device_signature"):
         check(thief.present(tr), tr, world[1])
@@ -259,3 +271,176 @@ def test_default_elements_age_flags():
     assert e["age_over_18"] is True
     e = default_elements(birth_date=date(2004, 2, 29), issue_date=date(2025, 2, 28))  # not 21 until Mar 1
     assert e["age_over_21"] is False
+
+
+# ----------------------------------------------------------------------------- review fixes
+def test_attribute_check_is_type_strict(world):
+    """In Python 1 == True; Longfellow compares CBOR bytes (f5), so must we."""
+    m = world[2].issue_to_new_device({"age_over_18": 1})
+    tr = transcript()
+    with pytest.raises(VerificationError, match="mdl_attribute"):
+        check(m.present(tr), tr, world[1])
+
+
+@pytest.mark.parametrize("bad_now", ["2026-11-26 12:00:00", "2026-11-26T12:00:00+00:00",
+                                     "2026-11-26T12:00:00.5Z", "", None, 1795000000])
+def test_now_must_be_tdate(world, mdl, bad_now):
+    tr = transcript()
+    with pytest.raises(ValueError):
+        verify_device_response(mdl.present(tr), tr, now=bad_now, trust=world[1])
+
+
+def test_naive_datetimes_refused(world):
+    with pytest.raises(ValueError, match="timezone-aware"):
+        world[2].issue(generate_key().public_key(), valid_from=datetime(2026, 1, 1))
+    with pytest.raises(ValueError, match="timezone-aware"):
+        MdlIssuer(world[2].key, world[2].cert, clock=lambda: datetime(2026, 1, 1)).issue_to_new_device()
+
+
+def test_subsecond_validity_window_refused(world):
+    t = datetime(2026, 1, 1, 0, 0, 0, 100, tzinfo=timezone.utc)
+    with pytest.raises(ValueError):
+        world[2].issue(generate_key().public_key(), valid_from=t, valid_until=t + timedelta(milliseconds=5))
+
+
+def test_from_pki_never_replaces_existing_dmv_cert(tmp_path):
+    pki = PKI.create(tmp_path / "pki")
+    pki.issue(Role.ISSUER, "test-dmv", generate_key().public_key())   # cert only, key held elsewhere
+    cert_file = pki.base / "issued" / "issuer" / "test-dmv" / "cert.pem"
+    before = cert_file.read_bytes()
+    with pytest.raises(FileNotFoundError):
+        MdlIssuer.from_pki(pki)
+    assert cert_file.read_bytes() == before
+
+
+def test_save_never_world_readable(tmp_path, mdl):
+    p = tmp_path / "mdl.json"
+    p.write_text("{}")
+    p.chmod(0o644)                                           # pre-existing, readable file
+    mdl.save(p)
+    assert p.stat().st_mode & 0o077 == 0
+
+
+def test_doc_type_mismatch_refused(mdl):
+    with pytest.raises(ValueError, match="docType"):
+        Mdl(mdl.issuer_signed, mdl.device_key, "org.example.other")
+
+
+@pytest.mark.parametrize("x5chain", ["list", "empty", "garbage", "missing"])
+def test_x5chain_variants(world, mdl, x5chain):
+    tr = transcript()
+    resp = cbor2.loads(mdl.present(tr))
+    hdr = resp["documents"][0]["issuerSigned"]["issuerAuth"][1]
+    if x5chain == "list":
+        hdr[33] = [hdr[33]]                                  # ISO allows an array: still accepted
+        check(cbor2.dumps(resp), tr, world[1])
+        return
+    if x5chain == "missing":
+        del hdr[33]
+    else:
+        hdr[33] = b"" if x5chain == "empty" else b"\x30\x03\x02\x01\x00"
+    with pytest.raises(VerificationError):
+        check(cbor2.dumps(resp), tr, world[1])
+
+
+@pytest.mark.parametrize("device_ns", ["missing", "unsigned-data"])
+def test_device_namespaces_must_be_the_signed_empty_map(world, mdl, device_ns):
+    tr = transcript()
+    resp = cbor2.loads(mdl.present(tr))
+    ds = resp["documents"][0]["deviceSigned"]
+    if device_ns == "missing":
+        del ds["nameSpaces"]
+    else:
+        ds["nameSpaces"] = cbor2.CBORTag(24, cbor2.dumps({NAMESPACE: {"age_over_18": True}}))
+    with pytest.raises(VerificationError, match="malformed"):
+        check(cbor2.dumps(resp), tr, world[1])
+
+
+def test_fuzz_reference_verifier_only_raises_verification_error(world, mdl):
+    """Flip random bytes / delete random map keys in a valid DeviceResponse.
+    The verifier must reject every changed response, and only ever with
+    VerificationError (never KeyError/TypeError/... nor acceptance)."""
+    import random
+    rng = random.Random(588)
+    tr = transcript()
+    good = mdl.present(tr)
+    check(good, tr, world[1])
+    accepted = 0
+    for i in range(400):
+        data = bytearray(good)
+        for _ in range(rng.randint(1, 4)):
+            data[rng.randrange(len(data))] = rng.randrange(256)
+        data = bytes(data)
+        try:
+            check(data, tr, world[1])
+        except VerificationError:
+            continue
+        accepted += data != good and _semantic(data) != _semantic(good)
+    assert accepted == 0
+
+    def drop_random_key(obj):
+        if isinstance(obj, dict) and obj:
+            if rng.random() < 0.4:
+                del obj[rng.choice(list(obj))]
+                return True
+            return any(drop_random_key(v) for v in obj.values())
+        if isinstance(obj, list):
+            return any(drop_random_key(v) for v in obj)
+        return False
+
+    for _ in range(200):
+        resp = cbor2.loads(good)
+        if not drop_random_key(resp):
+            continue
+        with pytest.raises(VerificationError):
+            check(cbor2.dumps(resp), tr, world[1])
+
+
+def _semantic(data):
+    """What a byte flip may change without mattering: nothing the verifier reads."""
+    try:
+        return cbor2.dumps(cbor2.loads(data))
+    except Exception:  # noqa: BLE001
+        return data
+
+
+# ----------------------------------------------------------------------------- CLI
+def test_cli_issue_show_issuer_pub(tmp_path, capsys):
+    from zkarma_pki import cli
+    out = tmp_path / "pki_out"
+    cli.main(["init", str(out)])
+    cli.main(["mdl-issue", str(out), str(tmp_path / "adult.json")])
+    cli.main(["mdl-issue", str(out), str(tmp_path / "minor.json"), "--birth-date", "2015-03-01"])
+    cli.main(["mdl-issuer-pub", str(out), str(tmp_path / "trust" / "issuer_pub.json")])
+    capsys.readouterr()
+    cli.main(["mdl-show", str(tmp_path / "adult.json")])
+    shown = json.loads(capsys.readouterr().out)
+    pub = json.loads((tmp_path / "trust" / "issuer_pub.json").read_text())
+    adult, minor = Mdl.load(tmp_path / "adult.json"), Mdl.load(tmp_path / "minor.json")
+    assert shown["issuer_pkx"] == pub["pkx"] == adult.issuer_coords()["issuer_pkx"]
+    assert adult.elements()[NAMESPACE]["age_over_18"] is True
+    assert minor.elements()[NAMESPACE]["age_over_18"] is False
+    trust = TrustStore.from_bundle(out / "trust_bundle")
+    tr = transcript()
+    verify_device_response(adult.present(tr), tr, now=datetime.now(timezone.utc), trust=trust,
+                           attributes={"age_over_18": True})
+
+
+def test_cli_issue_to_wallet_generated_key(tmp_path):
+    """The wallet keeps its device key; the DMV only ever sees the public half."""
+    from cryptography.hazmat.primitives import serialization
+    from zkarma_pki import cli
+    out = tmp_path / "pki_out"
+    cli.main(["init", str(out)])
+    device_key = generate_key()
+    (tmp_path / "dev_pub.pem").write_bytes(device_key.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+    cli.main(["mdl-issue", str(out), str(tmp_path / "issuer_signed.cbor"),
+              "--device-pubkey", str(tmp_path / "dev_pub.pem")])
+    mdl = Mdl((tmp_path / "issuer_signed.cbor").read_bytes(), device_key)
+    tr = transcript()
+    verify_device_response(mdl.present(tr), tr, now=datetime.now(timezone.utc),
+                           trust=TrustStore.from_bundle(out / "trust_bundle"),
+                           attributes={"age_over_18": True})
+    with pytest.raises(ValueError):                       # someone else's key: refused up front
+        Mdl((tmp_path / "issuer_signed.cbor").read_bytes(), generate_key())

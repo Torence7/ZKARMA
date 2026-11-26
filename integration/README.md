@@ -23,7 +23,7 @@ From the repository root:
 ```bash
 pip install -r website/requirements.txt -r client/requirements.txt -r pki/requirements.txt pytest
 
-python -m pytest -q integration                     # 50 tests, PKI mode must be 100% correct
+python -m pytest -q integration                     # 55 tests, PKI mode must be 100% correct
 ZKARMA_PROOF=real python -m pytest -q integration   # same, with REAL Longfellow proofs (needs zkage)
 ZKARMA_MAIN_REPO=../ZKARMA-main \
   python -m pytest -q integration/test_main_website_mdl.py   # main's own website, real proofs

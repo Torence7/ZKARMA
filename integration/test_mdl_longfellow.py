@@ -142,7 +142,9 @@ def test_outside_validity_cannot_prove(world, offset):
 
 def test_stolen_issuer_data_without_device_key(world):
     """Copying the issuer-signed mDL is useless without the wallet's device key."""
-    thief = Mdl(world["adult"].issuer_signed, generate_key())
+    thief = object.__new__(Mdl)          # bypass the constructor's own key check, as a thief would
+    thief.issuer_signed, thief.device_key, thief.doc_type = \
+        world["adult"].issuer_signed, generate_key(), world["adult"].doc_type
     tr = transcript()
     try:
         proof = prove(world, thief, tr)
@@ -189,3 +191,74 @@ def test_full_system_minor_gets_no_order():
         assert not s.proof_checks                                  # nothing reached the website
         placed = [r for r in s.website.OPERATIONS.values() if r["status"] == "placed"]
         assert placed == []
+
+
+# ----------------------------------------------------------------------------- review additions
+def test_proof_bound_to_challenge_time(world, honest):
+    """The website verifies at the challenge's `now`; a proof made for one time
+    doesn't verify at another (the statement includes `now`)."""
+    tr, proof = honest
+    later = utc(datetime.now(timezone.utc) + timedelta(minutes=5))
+    assert not website_verify(world, proof, tr, now=later)
+
+
+def test_19_year_old_proves_18_not_21(world):
+    today = datetime.now(timezone.utc).date()
+    young = world["issuer"].issue_to_new_device(birth_date=today.replace(year=today.year - 19) - timedelta(days=1))
+    tr = transcript()
+    assert website_verify(world, prove(world, young, tr), tr)
+    with pytest.raises(zkage.ZkageError):
+        make_wallet_prover(young, zkage)(tr, world["now"], "age_over_21")
+
+
+def test_revoked_dmv_key_never_reaches_website(tmp_path):
+    """Revoking the DMV in the PKI stops write_issuer_pub / mdl-issuer-pub from
+    handing its key to website/proofs.py."""
+    from zkarma_pki import Role, VerificationError
+    pki = PKI.create(tmp_path / "pki")
+    issuer = MdlIssuer.from_pki(pki)
+    pki.revoke(Role.ISSUER, issuer.cert)
+    trust = TrustStore.from_bundle(pki.base / "trust_bundle")
+    with pytest.raises(VerificationError, match="revoked"):
+        write_issuer_pub(tmp_path / "issuer_pub.json", trust, issuer.cert)
+    assert not (tmp_path / "issuer_pub.json").exists()
+
+
+def test_corrupted_mdoc_never_yields_accepted_proof(world):
+    """Byte flips anywhere in the DeviceResponse handed to Longfellow: the prover
+    fails or the website rejects. Never an accepted proof."""
+    import random
+    rng = random.Random(18013)
+    tr = transcript(nonce=b"\x05" * 32)
+    good = world["adult"].present(tr)
+    c = world["adult"].issuer_coords()
+    accepted = []
+    for _ in range(12):
+        data = bytearray(good)
+        i = rng.randrange(len(data))
+        data[i] ^= 1 << rng.randrange(8)
+        try:
+            proof, _ = zkage.prove(bytes(data), c["issuer_pkx"], c["issuer_pky"], tr, world["now"])
+        except zkage.ZkageError:
+            continue
+        if website_verify(world, proof, tr):
+            accepted.append(i)
+    # A flip in bytes Longfellow never reads (e.g. inside the x5chain certificate) can still
+    # prove; that is fine as long as the result is the same statement about the same mDL.
+    for i in accepted:
+        assert _in_x5chain(good, i), f"unexpected acceptance after flipping byte {i}"
+
+
+def _in_x5chain(mdoc: bytes, i: int) -> bool:
+    import cbor2
+    cert = cbor2.loads(mdoc)["documents"][0]["issuerSigned"]["issuerAuth"][1][33]
+    start = mdoc.find(cert)
+    return start <= i < start + len(cert)
+
+
+def test_env_real_proof_does_not_break_dev_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("ZKARMA_PROOF", "real")
+    with System(tmp_path / "a", mode="dev") as s:
+        assert s.proof == "binding"
+    with System(tmp_path / "b", mode="pki") as s:
+        assert s.proof == "real"

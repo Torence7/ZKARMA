@@ -35,6 +35,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -78,10 +80,20 @@ _EMPTY_DEVICE_NAMESPACES = cbor2.CBORTag(TAG_CBOR, cbor2.dumps({}))
 
 
 # ---------------------------------------------------------------------------- encoding helpers
+_TDATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def _utc_second(when: datetime) -> datetime:
+    """Aware UTC datetime truncated to the second. Naive datetimes are refused:
+    datetime.utcnow() on a non-UTC laptop would silently shift validity."""
+    if not isinstance(when, datetime) or when.tzinfo is None:
+        raise ValueError("use timezone-aware datetimes, e.g. datetime.now(timezone.utc)")
+    return when.astimezone(timezone.utc).replace(microsecond=0)
+
+
 def tdate(when: datetime) -> cbor2.CBORTag:
     """tdate as Longfellow expects it: tag 0, exactly 20 characters, UTC, no fraction."""
-    when = when.astimezone(timezone.utc).replace(microsecond=0)
-    return cbor2.CBORTag(TAG_TDATE, when.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    return cbor2.CBORTag(TAG_TDATE, _utc_second(when).strftime("%Y-%m-%dT%H:%M:%SZ"))
 
 
 def full_date(d: date) -> cbor2.CBORTag:
@@ -209,6 +221,11 @@ class MdlIssuer:
         d = Path(pki.base) / "issued" / Role.ISSUER.value / name
         if (d / "key.pem").exists():
             return cls(load_private_key(d / "key.pem"), load_cert(d / "cert.pem"), **kw)
+        if (d / "cert.pem").exists():
+            # Issued with --pubkey: the key lives elsewhere. Re-issuing would
+            # replace the certificate every website already trusts.
+            raise FileNotFoundError(f"{d / 'cert.pem'} exists but its key.pem does not; "
+                                    "use MdlIssuer.from_files(key, cert)")
         cert, key = pki.issue(Role.ISSUER, name)
         return cls(key, cert, **kw)
 
@@ -231,11 +248,13 @@ class MdlIssuer:
         if not isinstance(device_public_key, ec.EllipticCurvePublicKey) or \
                 device_public_key.curve.name != "secp256r1":
             raise ValueError("device key must be P-256")
-        signed = self.clock() - CLOCK_SKEW
-        valid_from = valid_from or signed
-        valid_until = valid_until or valid_from + valid_for
+        signed = _utc_second(self.clock() - CLOCK_SKEW)
+        valid_from = _utc_second(valid_from) if valid_from is not None else signed
+        valid_until = _utc_second(valid_until) if valid_until is not None else valid_from + valid_for
         if valid_until <= valid_from:
-            raise ValueError("valid_until must be after valid_from")
+            raise ValueError("valid_until must be after valid_from (at one-second resolution)")
+        if not all(isinstance(k, str) and k for k in elements):
+            raise ValueError("element identifiers must be non-empty strings")
 
         ids = list(range(len(elements)))
         secrets.SystemRandom().shuffle(ids)    # digest IDs don't reveal element order
@@ -275,6 +294,15 @@ class Mdl:
     issuer_signed: bytes
     device_key: PrivateKey
     doc_type: str = DOC_TYPE
+
+    def __post_init__(self):
+        """Catch a wallet file whose private key isn't the MSO's device key now,
+        rather than as an opaque Longfellow "GeneralFailure" at proving time."""
+        mso_key = public_key_from_cose(self.mso()["deviceKeyInfo"]["deviceKey"])
+        if mso_key.public_numbers() != self.device_key.public_key().public_numbers():
+            raise ValueError("device_key does not match the device key in the mDL's MSO")
+        if self.mso().get("docType") != self.doc_type:
+            raise ValueError(f"doc_type {self.doc_type!r} != MSO docType {self.mso().get('docType')!r}")
 
     # ---- reading
     def _parsed(self) -> dict:
@@ -348,8 +376,10 @@ class Mdl:
     def save(self, path) -> None:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.to_json(), indent=2))
-        p.chmod(0o600)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # never world-readable
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(self.to_json(), indent=2))
+        p.chmod(0o600)                                                   # if it already existed
 
     @classmethod
     def load(cls, path) -> "Mdl":
@@ -371,8 +401,13 @@ def verified_issuer_coords(issuer_cert: x509.Certificate | bytes | str, trust: T
                            expected_name: str | None = None) -> dict:
     """The DMV key for a VERIFIER (website/proofs.py): only from an issuer-role
     certificate that chains to the trust bundle and isn't revoked."""
-    if isinstance(issuer_cert, bytes) and not issuer_cert.startswith(b"-----"):
-        issuer_cert = x509.load_der_x509_certificate(issuer_cert)
+    if isinstance(issuer_cert, list):          # ISO 18013-5 allows x5chain as an array
+        issuer_cert = issuer_cert[0] if issuer_cert else b""
+    if isinstance(issuer_cert, (bytes, bytearray)) and not bytes(issuer_cert).startswith(b"-----"):
+        try:
+            issuer_cert = x509.load_der_x509_certificate(bytes(issuer_cert))
+        except Exception as e:  # noqa: BLE001  e.g. InvalidVersion is not a ValueError
+            raise VerificationError("malformed", f"issuer certificate: {e}") from e
     ident = trust.verify(issuer_cert, Role.ISSUER, expected_name=expected_name)
     return {**issuer_coords(ident.public_key), "issuer": ident.name}
 
@@ -391,9 +426,30 @@ def verify_device_response(device_response: bytes, transcript: bytes, *, now: st
       5. the disclosed elements have the requested values.
 
     For tests and debugging only: a website must never see the mdoc itself.
-    Returns {"elements": {...}, "issuer": ...}; raises VerificationError."""
+    Returns {"elements": {...}, "issuer": ...}; raises VerificationError, and
+    only VerificationError, for any bad input."""
     if isinstance(now, datetime):
         now = tdate(now).value
+    if not (isinstance(now, str) and _TDATE_RE.match(now)):
+        raise ValueError(f"now must be 'YYYY-MM-DDTHH:MM:SSZ', got {now!r}")
+    if trust is None and issuer_public_key is None:
+        raise ValueError("pass trust= or issuer_public_key=")
+    try:
+        return _verify_device_response(device_response, transcript, now, trust, issuer_public_key,
+                                       attributes or {}, namespace, doc_type)
+    except VerificationError:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError, IndexError, cbor2.CBORError) as e:
+        raise VerificationError("malformed", f"{type(e).__name__}: {e}") from e
+
+
+def _same_value(got: Any, want: Any) -> bool:
+    """Type-strict equality: Longfellow compares CBOR bytes, and in Python 1 == True."""
+    return type(got) is type(want) and got == want
+
+
+def _verify_device_response(device_response, transcript, now, trust, issuer_public_key,
+                            attributes, namespace, doc_type) -> dict:
     resp = _one_cbor_item(device_response, "DeviceResponse")
     try:
         if resp["version"] != MSO_VERSION or resp["status"] != 0 or len(resp["documents"]) != 1:
@@ -404,13 +460,17 @@ def verify_device_response(device_response: bytes, transcript: bytes, *, now: st
         issuer_auth = doc["issuerSigned"]["issuerAuth"]
         items = doc["issuerSigned"]["nameSpaces"].get(namespace, [])
         dsig = doc["deviceSigned"]["deviceAuth"]["deviceSignature"]
+        # DeviceAuthentication is signed over EMPTY DeviceNameSpaces; anything else
+        # here would be device-asserted data the signature doesn't cover.
+        if doc["deviceSigned"]["nameSpaces"] != _EMPTY_DEVICE_NAMESPACES:
+            raise VerificationError("malformed", "deviceSigned nameSpaces must be #6.24(<<{}>>)")
         protected, unprotected, payload, signature = issuer_auth
         dprotected, _, dpayload, dsignature = dsig
     except (KeyError, TypeError, ValueError) as e:
         raise VerificationError("malformed", f"DeviceResponse: {e}") from e
 
     # 1. issuer signature
-    if cbor2.loads(protected) != {COSE_HEADER_ALG: COSE_ALG_ES256}:
+    if _one_cbor_item(protected, "issuerAuth protected header") != {COSE_HEADER_ALG: COSE_ALG_ES256}:
         raise VerificationError("malformed", "issuerAuth alg is not ES256")
     issuer_name = None
     if trust is not None:
@@ -418,8 +478,6 @@ def verify_device_response(device_response: bytes, transcript: bytes, *, now: st
         issuer_name = info["issuer"]
         n = (int(info["issuer_pkx"], 16), int(info["issuer_pky"], 16))
         issuer_public_key = ec.EllipticCurvePublicNumbers(*n, ec.SECP256R1()).public_key()
-    if issuer_public_key is None:
-        raise ValueError("pass trust= or issuer_public_key=")
     if not _es256_verify(issuer_public_key, signature, _sig_structure(protected, payload)):
         raise VerificationError("mdl_issuer_signature", "MSO not signed by the issuer")
     mso = _mso(issuer_auth)
@@ -444,7 +502,8 @@ def verify_device_response(device_response: bytes, transcript: bytes, *, now: st
         raise VerificationError("mdl_validity", f"{now} not in [{vf}, {vu}]")
 
     # 4. device signature over the transcript (detached payload)
-    if dpayload is not None or cbor2.loads(dprotected) != {COSE_HEADER_ALG: COSE_ALG_ES256}:
+    if dpayload is not None or \
+            _one_cbor_item(dprotected, "deviceSignature protected header") != {COSE_HEADER_ALG: COSE_ALG_ES256}:
         raise VerificationError("malformed", "deviceSignature header/payload")
     device_pub = public_key_from_cose(mso["deviceKeyInfo"]["deviceKey"])
     if not _es256_verify(device_pub, dsignature,
@@ -452,7 +511,7 @@ def verify_device_response(device_response: bytes, transcript: bytes, *, now: st
         raise VerificationError("mdl_device_signature", "DeviceAuth does not cover this transcript")
 
     # 5. requested values
-    for name, want in (attributes or {}).items():
-        if name not in elements or elements[name] != want:
+    for name, want in attributes.items():
+        if name not in elements or not _same_value(elements[name], want):
             raise VerificationError("mdl_attribute", f"{name} != {want!r}")
     return {"elements": elements, "issuer": issuer_name, "valid_from": vf, "valid_until": vu}

@@ -187,9 +187,15 @@ age_over_21.
 
 **Results (Intel Xeon 2.1 GHz, 4 vCPU, `target-cpu=native`, n=30):** 30/30
 proved, 30/30 accepted by `website/proofs.py`, 30/30 rejected when replayed
-under another nonce. Issue 0.5 ms, DeviceAuth signature 0.14 ms, prove 726 ms
-median (p95 781), website verify 280 ms (p95 312, includes subprocess), proof
-361 KB, mdoc 1.45 KB. Raw: `integration/results/mdl_longfellow.json`.
+under another nonce. Issue 0.69 ms, DeviceAuth signature 0.11 ms, prove 714 ms
+median (p95 771), website verify 279 ms (p95 306, includes subprocess), proof
+360 KB, mdoc 1.45 KB. Raw: `integration/results/mdl_longfellow.json`.
+
+**Reference verifier.** `verify_device_response()` is a plain (not ZK) check of
+what Longfellow proves, for tests and debugging; a website never sees the mdoc.
+It raises only `VerificationError` for bad input (fuzzed with byte flips and
+deleted keys), compares attribute values type-strictly (CBOR `true`, not `1`),
+and requires the signed empty DeviceNameSpaces.
 
 **Limits.** The wallet's device key is stored in a JSON file (test only; a real
 device key lives in secure hardware). Issuer certificates don't carry the ISO

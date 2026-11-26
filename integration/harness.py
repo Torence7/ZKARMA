@@ -159,7 +159,11 @@ class System:
                  site_clock=time.time, proof: str | None = None, mdl_birth_date=None):
         if mode not in ("pki", "nopki", "dev"):
             raise ValueError(f"unknown mode {mode!r}")
-        self.proof = proof or os.environ.get("ZKARMA_PROOF", "binding")
+        if proof is None:
+            # The env default only applies where a proof is installed: dev mode
+            # always means today's "dev-proof", so runners that cover all modes still work.
+            proof = "binding" if mode == "dev" else os.environ.get("ZKARMA_PROOF", "binding")
+        self.proof = proof
         if self.proof not in ("binding", "real"):
             raise ValueError(f"unknown proof {self.proof!r}")
         if self.proof == "real" and mode == "dev":

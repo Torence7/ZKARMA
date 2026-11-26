@@ -20,6 +20,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import date
 from pathlib import Path
@@ -69,8 +70,11 @@ def site(tmp_path_factory):
     env = {k: v for k, v in os.environ.items() if k not in ("ZKARMA_DEV", "ZKARMA_ENTRY_CHECK")}
     env.update(ZKARMA_PKI_DIR=str(pki.base), ZKARMA_ORIGIN=origin, ZKARMA_PORT=str(port),
                ZKAGE_BIN=str(zkage.ZKAGE), ZKAGE_CIRCUITS=str(zkage.CIRCUITS))
+    # Log to a file, not a pipe: Flask logs every request, and an unread pipe
+    # fills up and blocks the server.
+    log = open(d / "website.log", "w")
     proc = subprocess.Popen([sys.executable, str(MAIN / "website" / "app.py")], env=env,
-                            cwd=MAIN, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                            cwd=MAIN, stdout=log, stderr=subprocess.STDOUT, text=True)
     for _ in range(100):
         try:
             if http("GET", origin + "/health")[0] == 200:
@@ -79,11 +83,13 @@ def site(tmp_path_factory):
             time.sleep(0.1)
     else:
         proc.kill()
-        pytest.fail("main website did not start:\n" + proc.stdout.read())
+        log.close()
+        pytest.fail("main website did not start:\n" + (d / "website.log").read_text())
     yield {"origin": origin, "pki": pki, "signer": AgentRequestSigner(agent_key, agent_cert),
            "jkt": jwk_thumbprint(agent_cert.public_key())}
     proc.terminate()
     proc.wait(timeout=10)
+    log.close()
 
 
 def signed(site, method, path, body=None):
