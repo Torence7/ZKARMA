@@ -149,11 +149,23 @@ class AgentCreds:
 
 
 class System:
+    """proof="binding" (default) uses the SHA-256 stand-in. proof="real" gives the
+    wallet a test mDL from the PKI's test DMV and runs real Longfellow proofs
+    (client/zkage.py) checked by the real website/proofs.py. ZKARMA_PROOF=real
+    switches the default, so every existing scenario can run on real proofs."""
+
     def __init__(self, tmp, *, mode: str = "pki", website_file: Path | str | None = None,
                  consent: AutoConsent | None = None, agent_name: str = "safe-agent",
-                 site_clock=time.time):
+                 site_clock=time.time, proof: str | None = None, mdl_birth_date=None):
         if mode not in ("pki", "nopki", "dev"):
             raise ValueError(f"unknown mode {mode!r}")
+        self.proof = proof or os.environ.get("ZKARMA_PROOF", "binding")
+        if self.proof not in ("binding", "real"):
+            raise ValueError(f"unknown proof {self.proof!r}")
+        if self.proof == "real" and mode == "dev":
+            raise ValueError("dev mode means dev-proof; use proof='real' with pki or nopki")
+        self.mdl_birth_date = mdl_birth_date
+        self.prove_metrics: list[dict] = []
         self.tmp, self.mode, self.pki_mode = Path(tmp), mode, mode == "pki"
         self.website_file = Path(website_file or DEFAULT_WEBSITE)
         self.site_port, self.wallet_port = free_port(), free_port()
@@ -180,7 +192,9 @@ class System:
 
         self.website = load_website(self.website_file, self.origin, self.site_port,
                                     dev=not self.pki_mode)
-        self.variant = "enter+session" if "enter" in self.website.app.view_functions else "public-catalog"
+        # main's website keeps /enter but only enables it with ZKARMA_ENTRY_CHECK=1.
+        entry = getattr(self.website, "ENTRY_CHECK", "enter" in self.website.app.view_functions)
+        self.variant = "enter+session" if entry else "public-catalog"
         if self.pki_mode:
             self._install_pki(site_clock)
         else:
@@ -218,12 +232,47 @@ class System:
 
         web.challenge = signed_challenge
 
-        self._install_binding_proof()
+        self._install_proof()
 
         self.wallet_verifier = RequestVerifier(self.trust_wallet, self.wallet_origin)
         client_wallet.DEV = client_validate.DEV = client_prover.DEV = False
         client_wallet.agent_identity = self.wallet_verifier.flask_identity
         client_validate.check_signature = self._wallet_check_signature
+
+    def _install_proof(self) -> None:
+        if self.proof == "real":
+            self._install_real_proof()
+        else:
+            self._install_binding_proof()
+
+    def _install_real_proof(self) -> None:
+        """Wallet: test mDL from the PKI's test DMV + client/zkage.py.
+        Website: its own website/proofs.py, DMV key from the PKI-verified cert."""
+        from datetime import date
+
+        import proofs as real_proofs  # website/proofs.py
+        import zkage
+        from integration.mdl_adapters import make_wallet_prover, write_issuer_pub
+        from zkarma_pki.mdl import MdlIssuer
+
+        if not zkage.available():
+            raise RuntimeError("proof='real' needs zkage; see zk/README.md")
+        self.mdl = MdlIssuer(self.issuer_key, self.issuer_cert).issue_to_new_device(
+            birth_date=self.mdl_birth_date or date(2000, 1, 1))
+        client_wallet.prove = make_wallet_prover(self.mdl, zkage, self.prove_metrics.append)
+        issuer_pub = write_issuer_pub(self.tmp / "trust" / "issuer_pub.json", self.trust_site,
+                                      self.issuer_cert_pem)
+        saved = {k: getattr(real_proofs, k) for k in ("ZKAGE", "CIRCUITS", "ISSUER_PUB")}
+        self._restore_proofs = lambda: [setattr(real_proofs, k, v) for k, v in saved.items()]
+        real_proofs.ZKAGE, real_proofs.CIRCUITS = zkage.ZKAGE, zkage.CIRCUITS
+        real_proofs.ISSUER_PUB = issuer_pub
+
+        def verify_proof(proof, transcript, now):
+            ok = real_proofs.verify(proof, transcript, now)
+            self.proof_checks["ok" if ok else "invalid"] += 1
+            return ok
+
+        self.website.proofs = SimpleNamespace(verify=verify_proof)
 
     def _install_binding_proof(self) -> None:
         def verify_proof(proof, transcript, now):
@@ -239,7 +288,7 @@ class System:
             setattr(mod, attr, value)
         client_wallet.DEV = client_validate.DEV = client_prover.DEV = True
         if binding:
-            self._install_binding_proof()
+            self._install_proof()
 
     def _wallet_check_signature(self, message: dict) -> bool:
         sig = message.get("signature")
@@ -277,6 +326,7 @@ class System:
         self._loop.join(timeout=2)
         for (mod, attr), value in _ORIGINALS.items():
             setattr(mod, attr, value)
+        getattr(self, "_restore_proofs", lambda: None)()
         return False
 
     # ----------------------------------------------------------------- agents

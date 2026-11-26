@@ -10,6 +10,7 @@ identity, unsigned challenges, dev-proof) so the PKI's contribution is visible.
 """
 from __future__ import annotations
 
+import os
 import copy
 import json
 from collections import Counter
@@ -449,7 +450,16 @@ def _wallet_attack(s, agent, sc_id, forged, harmful_if_prompted=False):
 
 
 def run(sc: Scenario, tmp: Path, mode: str = "pki", website_file=None) -> Result:
-    with System(tmp, mode=mode, website_file=website_file) as s:
+    # main's current website has the /enter session check off unless asked for.
+    entry_env = {"ZKARMA_ENTRY_CHECK": "1"} if sc.needs == "enter+session" else {}
+    saved = {k: os.environ.get(k) for k in entry_env}
+    os.environ.update(entry_env)
+    try:
+        system = System(tmp, mode=mode, website_file=website_file)
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k) if v is None else os.environ.__setitem__(k, v)
+    with system as s:
         if sc.needs != s.variant:
             raise LookupError(f"{sc.id} needs the {sc.needs} website, got {s.variant}")
         r = sc.fn(s)

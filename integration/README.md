@@ -23,7 +23,11 @@ From the repository root:
 ```bash
 pip install -r website/requirements.txt -r client/requirements.txt -r pki/requirements.txt pytest
 
-python -m pytest -q integration                     # 31 tests, PKI mode must be 100% correct
+python -m pytest -q integration                     # 50 tests, PKI mode must be 100% correct
+ZKARMA_PROOF=real python -m pytest -q integration   # same, with REAL Longfellow proofs (needs zkage)
+ZKARMA_MAIN_REPO=../ZKARMA-main \
+  python -m pytest -q integration/test_main_website_mdl.py   # main's own website, real proofs
+python integration/bench_mdl.py                     # real-proof reliability and timings
 
 python integration/run_preliminary.py \
     --main-website ../path/to/main/website/app.py   # optional: also tests main's /enter website
@@ -40,6 +44,13 @@ python integration/run_preliminary.py \
 
 `pki` vs `nopki` isolates what the PKI contributes. `dev` is the system as it runs today.
 
+**Real proofs.** `System(..., proof="real")`, or `ZKARMA_PROOF=real` for every
+test, replaces the binding stand-in in `pki` and `nopki` mode. The wallet then
+holds a test mDL issued by the PKI's test DMV (`pki/zkarma_pki/mdl.py`) and
+proves with `client/zkage.py`. The website checks with its own
+`website/proofs.py`, with the DMV key from the PKI-verified certificate. All 25
+scenarios pass this way, against this branch's website and against `main`'s.
+
 ## Files
 
 | File | What it does |
@@ -49,6 +60,10 @@ python integration/run_preliminary.py \
 | `scenarios.py` | 5 honest flows + 20 attacks (H1-H5, A1-A20) as functions over a `System` |
 | `test_pki_integration.py` | pytest: every scenario in PKI mode + format/identity interop checks |
 | `run_preliminary.py` | Runs everything in all modes, benchmarks, writes `results/` |
+| `mdl_adapters.py` | `make_wallet_prover(mdl)`: drop-in for `client/prover.prove` using a PKI-issued mDL + Longfellow; `write_issuer_pub()` for `website/proofs.py` |
+| `test_mdl_longfellow.py` | Real Longfellow: website accepts, proof bound to nonce/agent/operation/origin, retry gets a fresh proof, minor/expired/untrusted DMV/stolen mDL fail, full-system purchase |
+| `test_main_website_mdl.py` | `main`'s website, unmodified, as its own process in PKI mode, with real proofs (needs `ZKARMA_MAIN_REPO`) |
+| `bench_mdl.py` | n trials of issue -> DeviceAuth -> prove -> website verify, success rates and timings |
 
 ## Integration gaps found (need a team decision)
 
